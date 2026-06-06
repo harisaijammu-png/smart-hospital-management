@@ -1,5 +1,5 @@
 const express = require('express');
-const mysql = require('mysql2/promise');
+const { Pool } = require('pg');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
@@ -9,52 +9,53 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const pool = mysql.createPool({
+const pool = new Pool({
     host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
+    user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'hospital_db',
-    port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
+    port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 5432,
+    max: 10,
+    idleTimeoutMillis: 30000,
 });
 
 // Patient Routes
 app.post('/api/patients', async (req, res) => {
     const { displayToken, tokenNumber, name, phone, age, deptId, complaint } = req.body;
-    await pool.execute('INSERT INTO patients (displayToken, tokenNumber, name, phone, age, deptId, complaint) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [displayToken, tokenNumber, name, phone, age, deptId, complaint]);
+    await pool.query(
+        'INSERT INTO patients (displaytoken, tokennumber, name, phone, age, deptid, complaint) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+        [displayToken, tokenNumber, name, phone, age, deptId, complaint]
+    );
     res.sendStatus(201);
 });
 
 app.get('/api/patients', async (req, res) => {
-    const [rows] = await pool.query('SELECT * FROM patients ORDER BY id DESC');
-    res.json(rows);
+    const result = await pool.query('SELECT * FROM patients ORDER BY id DESC');
+    res.json(result.rows);
 });
 
 // Lab Routes
 app.post('/api/lab', async (req, res) => {
     const { token, tests } = req.body;
-    await pool.execute('INSERT INTO lab_requests (token, tests) VALUES (?, ?)', [token, tests]);
+    await pool.query('INSERT INTO lab_requests (token, tests) VALUES ($1, $2)', [token, tests]);
     res.sendStatus(201);
 });
 
 app.get('/api/lab', async (req, res) => {
-    const [rows] = await pool.query('SELECT * FROM lab_requests ORDER BY id DESC');
-    res.json(rows);
+    const result = await pool.query('SELECT * FROM lab_requests ORDER BY id DESC');
+    res.json(result.rows);
 });
 
 // Pharmacy Routes
 app.post('/api/pharmacy', async (req, res) => {
     const { token, medicines } = req.body;
-    await pool.execute('INSERT INTO prescriptions (token, medicines) VALUES (?, ?)', [token, medicines]);
+    await pool.query('INSERT INTO prescriptions (token, medicines) VALUES ($1, $2)', [token, medicines]);
     res.sendStatus(201);
 });
 
 app.get('/api/pharmacy', async (req, res) => {
-    const [rows] = await pool.query('SELECT * FROM prescriptions ORDER BY id DESC');
-    res.json(rows);
+    const result = await pool.query('SELECT * FROM prescriptions ORDER BY id DESC');
+    res.json(result.rows);
 });
 
 // Reset System
