@@ -9,7 +9,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const pool = new Pool({
+const poolConfig = process.env.DATABASE_URL ? {
+    connectionString: process.env.DATABASE_URL,
+    max: 10,
+    idleTimeoutMillis: 30000,
+} : {
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
@@ -17,7 +21,53 @@ const pool = new Pool({
     port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 5432,
     max: 10,
     idleTimeoutMillis: 30000,
-});
+};
+
+const pool = new Pool(poolConfig);
+
+// Initialize database tables if they don't exist
+const initDatabase = async () => {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS patients (
+                id SERIAL PRIMARY KEY,
+                displaytoken VARCHAR(50),
+                tokennumber VARCHAR(50),
+                name VARCHAR(100),
+                phone VARCHAR(20),
+                age INT,
+                deptid INT,
+                complaint TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS lab_requests (
+                id SERIAL PRIMARY KEY,
+                token VARCHAR(50),
+                tests TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS prescriptions (
+                id SERIAL PRIMARY KEY,
+                token VARCHAR(50),
+                medicines TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        console.log('Database tables initialized');
+    } catch (err) {
+        console.error('Failed to initialize database:', err);
+    }
+};
+
+// Initialize database on startup
+initDatabase();
 
 // Patient Routes
 app.post('/api/patients', async (req, res) => {
