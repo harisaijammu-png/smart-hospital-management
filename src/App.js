@@ -345,7 +345,7 @@ export default function SmartHospital() {
     if (!medInputs[dId]?.trim()) return alert("Enter medicines.");
 
     const newPrescription = {
-      id: Date.now(),
+      id: Date.now(), 
       token: `${dId}-${currentNum}`,
       medicines: medInputs[dId],
       status: 'Pending',
