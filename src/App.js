@@ -1,5 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { Users, UserCircle, Stethoscope, Search, FileText, Trash2, Lock, Beaker, Pill, ShoppingBag, CheckCircle2 } from 'lucide-react';
+
+// Replace with your actual Supabase Project URL and Public Anon Key
+const SUPABASE_URL = "https://your-project-url.supabase.co";
+const SUPABASE_ANON_KEY = "your-anon-key";
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const DEPARTMENTS = [
   { id: 'CARD', name: 'Cardiology' }, { id: 'GYN', name: 'Gynecology' },
@@ -56,28 +62,47 @@ export default function SmartHospital() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
 
-  const [patients, setPatients] = useState(() => JSON.parse(localStorage.getItem('hospital_patients')) || []);
-  const [serving, setServing] = useState(() => JSON.parse(localStorage.getItem('hospital_serving')) || DEPARTMENTS.reduce((a, d) => ({ ...a, [d.id]: 0 }), {}));
-  const [deptTokenCounters, setDeptTokenCounters] = useState(() => JSON.parse(localStorage.getItem('hospital_counters')) || DEPARTMENTS.reduce((a, d) => ({ ...a, [d.id]: 1 }), {}));
-  const [labRequests, setLabRequests] = useState(() => JSON.parse(localStorage.getItem('hospital_lab')) || []);
-  const [prescriptions, setPrescriptions] = useState(() => JSON.parse(localStorage.getItem('hospital_prescriptions')) || []);
+  // Connected backend live states
+  const [patients, setPatients] = useState([]);
+  const [labRequests, setLabRequests] = useState([]);
+  const [prescriptions, setPrescriptions] = useState([]);
 
   const [formData, setFormData] = useState({ name: '', phone: '', age: '', gender: 'Male', address: '', complaint: '', deptId: 'CARD' });
-  const [searchToken, setSearchToken] = useState('');
   const [labInputs, setLabInputs] = useState({});
   const [medInputs, setMedInputs] = useState({});
   const [selectedReviewToken, setSelectedReviewToken] = useState('');
 
-  useEffect(() => { localStorage.setItem('hospital_patients', JSON.stringify(patients)); }, [patients]);
-  useEffect(() => { localStorage.setItem('hospital_serving', JSON.stringify(serving)); }, [serving]);
-  useEffect(() => { localStorage.setItem('hospital_counters', JSON.stringify(deptTokenCounters)); }, [deptTokenCounters]);
-  useEffect(() => { localStorage.setItem('hospital_lab', JSON.stringify(labRequests)); }, [labRequests]);
-  useEffect(() => { localStorage.setItem('hospital_prescriptions', JSON.stringify(prescriptions)); }, [prescriptions]);
+  // Fetch initial schema sets and establish live real-time synchronization channels
+  useEffect(() => {
+    fetchData();
+
+    const patientChannel = supabase.channel('realtime_hospital_changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'patients' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'lab_requests' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'prescriptions' }, () => fetchData())
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(patientChannel);
+    };
+  }, []);
+
+  const fetchData = async () => {
+    const { data: ptData } = await supabase.from('patients').select('*').order('id', { ascending: true });
+    if (ptData) setPatients(ptData);
+
+    const { data: lbData } = await supabase.from('lab_requests').select('*').order('id', { ascending: false });
+    if (lbData) setLabRequests(lbData);
+
+    const { data: rxData } = await supabase.from('prescriptions').select('*').order('id', { ascending: false });
+    if (rxData) setPrescriptions(rxData);
+  };
 
   const handleLogin = (e) => {
     e.preventDefault();
     if (loginForm.username === 'harisai' && loginForm.password === 'harisai@1234') {
       setIsAuthenticated(true);
+      setView('doctor'); // Forward to primary working screen post auth
     } else {
       alert("Invalid Credentials!");
     }
@@ -89,120 +114,131 @@ export default function SmartHospital() {
     setLoginForm({ username: '', password: '' });
   };
 
-  const registerPatient = (e) => {
+  const registerPatient = async (e) => {
     e.preventDefault();
-    const tokenNumber = deptTokenCounters[formData.deptId];
+
+    // Step counter from persistent backend state
+    const { data: counterData } = await supabase
+      .from('dept_counters')
+      .select('current_count')
+      .eq('dept_id', formData.deptId)
+      .single();
+
+    if (!counterData) return alert("System Counter sync breakdown.");
+
+    const tokenNumber = counterData.current_count;
     const displayToken = `${formData.deptId}-${tokenNumber}`;
-    const newToken = {
-      displayToken,
-      tokenNumber,
+
+    const { error: insertError } = await supabase.from('patients').insert([{
+      display_token: displayToken,
+      token_number: tokenNumber,
+      name: formData.name,
+      phone: formData.phone,
+      age: parseInt(formData.age),
+      gender: formData.gender,
+      address: formData.address,
+      complaint: formData.complaint,
+      dept_id: formData.deptId,
       status: PATIENT_STATUSES.WAITING,
-      ...formData,
-      timeJoined: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    };
-    setPatients([...patients, newToken]);
-    setDeptTokenCounters(prev => ({ ...prev, [formData.deptId]: prev[formData.deptId] + 1 }));
+      time_joined: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }]);
+
+    if (insertError) return alert("Generation Error: " + insertError.message);
+
+    // Bump counter for next queue ticket
+    await supabase.from('dept_counters').update({ current_count: tokenNumber + 1 }).eq('dept_id', formData.deptId);
+
     setFormData({ name: '', phone: '', age: '', gender: 'Male', address: '', complaint: '', deptId: 'CARD' });
-    alert(`Token issued: ${displayToken}`);
+    alert(`Token issued successfully: ${displayToken}`);
+    fetchData();
   };
 
-  const normalizeStatus = (patient) => patient.status || PATIENT_STATUSES.WAITING;
+  const normalizeStatus = (p) => p.status || PATIENT_STATUSES.WAITING;
 
   const getNextWaitingPatient = (dId) => {
     return patients
-      .filter(p => p.deptId === dId && normalizeStatus(p) === PATIENT_STATUSES.WAITING)
-      .sort((a, b) => a.tokenNumber - b.tokenNumber)[0];
+      .filter(p => p.dept_id === dId && normalizeStatus(p) === PATIENT_STATUSES.WAITING)
+      .sort((a, b) => a.token_number - b.token_number)[0];
   };
 
   const getCurrentServingPatient = (dId) => {
-    return patients.find(p => p.deptId === dId && normalizeStatus(p) === PATIENT_STATUSES.SERVING);
+    return patients.find(p => p.dept_id === dId && normalizeStatus(p) === PATIENT_STATUSES.SERVING);
   };
 
-  const nextPatient = (dId) => {
-    const currentServing = getCurrentServingPatient(dId);
-    if (currentServing) {
-      alert('Finish or place the current patient on hold before calling the next one.');
-      return;
+  const nextPatient = async (dId) => {
+    if (getCurrentServingPatient(dId)) {
+      return alert('Finish or place the current patient on hold before calling the next one.');
     }
 
     const nextWaiting = getNextWaitingPatient(dId);
-    if (!nextWaiting) {
-      alert(`No waiting patient available for ${dId}.`);
-      options(prev => ({ ...prev, [dId]: 0 }));
-      return;
-    }
+    if (!nextWaiting) return alert(`No waiting patient available for ${dId}.`);
 
-    setPatients(prev => prev.map(p => p.displayToken === nextWaiting.displayToken ? { ...p, status: PATIENT_STATUSES.SERVING } : p));
-    setServing(prev => ({ ...prev, [dId]: nextWaiting.tokenNumber }));
-    setLabInputs(prev => ({ ...prev, [dId]: '' }));
-    setMedInputs(prev => ({ ...prev, [nextWaiting.displayToken]: '' }));
+    await supabase.from('patients').update({ status: PATIENT_STATUSES.SERVING }).eq('display_token', nextWaiting.display_token);
+    fetchData();
   };
 
-  const sendToLab = (dId) => {
+  const sendToLab = async (dId) => {
     const currentPatient = getCurrentServingPatient(dId);
-    if (!currentPatient) {
-      alert('No patient is currently being served in this department.');
-      return;
-    }
+    if (!currentPatient) return alert('No active workspace loaded.');
 
     const tests = labInputs[dId]?.trim();
-    if (!tests) {
-      alert('Please type down the specific lab tests needed.');
-      return;
-    }
+    if (!tests) return alert('Please select or specify laboratory tests.');
 
-    setPatients(prev => prev.map(p => p.displayToken === currentPatient.displayToken ? {
-      ...p,
+    await supabase.from('patients').update({
       status: PATIENT_STATUSES.HOLD_LAB,
-      labTests: tests,
-      labRequestedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    } : p));
+      lab_tests: tests,
+      lab_requested_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }).eq('display_token', currentPatient.display_token);
 
-    setLabRequests(prev => [{ id: Date.now(), token: currentPatient.displayToken, deptId: dId, tests, status: 'Pending', timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...prev]);
+    await supabase.from('lab_requests').insert([{
+      token: currentPatient.display_token,
+      dept_id: dId,
+      tests,
+      status: 'Pending',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }]);
+
     setLabInputs(prev => ({ ...prev, [dId]: '' }));
-    setServing(prev => ({ ...prev, [dId]: 0 }));
+    fetchData();
   };
 
-  const completeLabRequest = (id) => {
-    const request = labRequests.find(r => r.id === id);
-    if (!request) return;
-
-    setLabRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'Completed' } : r));
-    setPatients(prev => prev.map(p => p.displayToken === request.token ? {
-      ...p,
+  const completeLabRequest = async (id, token, tests) => {
+    await supabase.from('lab_requests').update({ status: 'Completed' }).eq('id', id);
+    await supabase.from('patients').update({
       status: PATIENT_STATUSES.READY_FOR_REVIEW,
-      labCompletedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      labResults: `Results logged for ${request.tests}`
-    } : p));
+      lab_completed_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      lab_results: `Results logged for ${tests}`
+    }).eq('display_token', token);
+
+    fetchData();
   };
 
-  const selectReviewPatient = (displayToken) => {
-    setSelectedReviewToken(displayToken);
-  };
-
-  const completeVisit = (dId, activeToken) => {
+  const completeVisit = async (dId, activeToken) => {
     const medicines = medInputs[activeToken]?.trim();
-    if (!medicines) {
-      alert('Please type or write prescribed medicines before completion.');
-      return;
-    }
+    if (!medicines) return alert('Please select or write prescribed medicines before completion.');
 
-    setPatients(prev => prev.map(p => p.displayToken === activeToken ? { ...p, status: PATIENT_STATUSES.COMPLETED } : p));
-    setPrescriptions(prev => [{ id: Date.now(), token: activeToken, medicines, status: 'Pending', timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }, ...prev]);
+    await supabase.from('patients').update({ status: PATIENT_STATUSES.COMPLETED }).eq('display_token', activeToken);
+    await supabase.from('prescriptions').insert([{
+      token: activeToken,
+      medicines,
+      status: 'Pending',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    }]);
+
     setMedInputs(prev => ({ ...prev, [activeToken]: '' }));
-
-    if (selectedReviewToken === activeToken) {
-      setSelectedReviewToken('');
-    }
+    if (selectedReviewToken === activeToken) setSelectedReviewToken('');
     alert(`Visit Complete! Prescription forwarded to Pharmacy for ${activeToken}`);
+    fetchData();
   };
 
-  const resetSystemForNewDay = () => {
-    if (window.confirm("Reset all data? This clears out history completely.")) {
-      setPatients([]); setServing(DEPARTMENTS.reduce((a, d) => ({ ...a, [d.id]: 0 }), {}));
-      setDeptTokenCounters(DEPARTMENTS.reduce((a, d) => ({ ...a, [d.id]: 1 }), {}));
-      setLabRequests([]); setPrescriptions([]);
+  const resetSystemForNewDay = async () => {
+    if (window.confirm("Reset all database values? This drops tracking rows entirely.")) {
+      await supabase.from('prescriptions').delete().neq('id', 0);
+      await supabase.from('lab_requests').delete().neq('id', 0);
+      await supabase.from('patients').delete().neq('id', 0);
+      await supabase.from('dept_counters').update({ current_count: 1 }).neq('dept_id', '');
       setSelectedReviewToken('');
+      fetchData();
     }
   };
 
@@ -220,7 +256,7 @@ export default function SmartHospital() {
       )}
 
       <main className="relative p-6 max-w-7xl mx-auto">
-        {!isAuthenticated ? (
+        {!isAuthenticated && view !== 'patient' ? (
           <div className="relative overflow-hidden rounded-[2rem] bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.16),_transparent_24%),radial-gradient(circle_at_bottom_right,_rgba(37,99,235,0.12),_transparent_30%)] px-6 py-10">
             <div className="absolute inset-0 pointer-events-none">
               <div className="absolute -left-28 top-8 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl"></div>
@@ -240,7 +276,7 @@ export default function SmartHospital() {
                       <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
                         <item.icon size={20} />
                       </div>
-                      <div>
+                      <div className="text-left">
                         <p className="font-semibold text-slate-900">{item.label}</p>
                         <p className="text-sm text-slate-500">{item.description}</p>
                       </div>
@@ -255,18 +291,46 @@ export default function SmartHospital() {
           </div>
         ) : (
           <>
+            {view === 'patient' && (
+              <div className="space-y-6">
+                <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex justify-between items-center flex-wrap gap-4">
+                  <div>
+                    <h2 className="text-3xl font-black">Live Department Queue Monitor</h2>
+                    <p className="text-slate-500 font-semibold mt-1">Real-time room operational token states</p>
+                  </div>
+                  {!isAuthenticated && (
+                    <button onClick={() => setView('doctor')} className="bg-blue-600 text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition shadow-sm"><Lock size={16} /> Control Desk</button>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {DEPARTMENTS.map(d => {
+                    const activeP = getCurrentServingPatient(d.id);
+                    const waitList = patients.filter(p => p.dept_id === d.id && normalizeStatus(p) === PATIENT_STATUSES.WAITING);
+                    return (
+                      <div key={d.id} className="bg-white border rounded-[2rem] p-6 shadow-sm flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between items-start border-b pb-3 mb-4">
+                            <h3 className="font-black text-lg text-slate-800">{d.name}</h3>
+                            <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-lg font-bold">{waitList.length} Waiting</span>
+                          </div>
+                          <div className="bg-slate-900 text-center py-4 rounded-2xl text-white font-black text-3xl tracking-wide mb-4">
+                            {activeP ? activeP.display_token : `${d.id}-0`}
+                          </div>
+                        </div>
+                        <p className="text-xs text-center text-slate-400 font-medium">Next: {waitList[0]?.display_token || 'None'}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {view === 'doctor' && (
               <div className="space-y-8">
-                <div className="rounded-[2rem] border border-slate-200 bg-white/80 p-6 shadow-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-semibold uppercase tracking-[0.3em] text-blue-600">Doctor Dashboard</p>
-                      <h2 className="text-3xl font-black text-slate-900">Department Queue Management</h2>
-                    </div>
-                    <div className="rounded-2xl bg-slate-900 px-4 py-3 text-white">
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.3em] text-slate-400">Patients Active</p>
-                      <p className="text-2xl font-black">{patients.filter(p => normalizeStatus(p) !== PATIENT_STATUSES.COMPLETED).length}</p>
-                    </div>
+                <div className="rounded-[2rem] border border-slate-200 bg-white/80 p-6 shadow-sm flex justify-between items-center">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.3em] text-blue-600">Doctor Dashboard</p>
+                    <h2 className="text-3xl font-black text-slate-900">Queue & Workstations</h2>
                   </div>
                 </div>
 
@@ -274,10 +338,10 @@ export default function SmartHospital() {
                   <div className="space-y-8">
                     {DEPARTMENTS.map((d) => {
                       const servingPatient = getCurrentServingPatient(d.id);
-                      const waitingCount = patients.filter(p => p.deptId === d.id && normalizeStatus(p) === PATIENT_STATUSES.WAITING).length;
-                      const holdCount = patients.filter(p => p.deptId === d.id && normalizeStatus(p) === PATIENT_STATUSES.HOLD_LAB).length;
+                      const waitingCount = patients.filter(p => p.dept_id === d.id && normalizeStatus(p) === PATIENT_STATUSES.WAITING).length;
+                      const holdCount = patients.filter(p => p.dept_id === d.id && normalizeStatus(p) === PATIENT_STATUSES.HOLD_LAB).length;
 
-                      const activeReviewPatient = patients.find(p => p.displayToken === selectedReviewToken && p.deptId === d.id);
+                      const activeReviewPatient = patients.find(p => p.display_token === selectedReviewToken && p.dept_id === d.id);
                       const activePatient = servingPatient || activeReviewPatient;
                       const isReviewStage = !!activeReviewPatient;
 
@@ -293,153 +357,147 @@ export default function SmartHospital() {
 
                           <div className="rounded-[2rem] bg-slate-950 p-6 text-center text-white">
                             <p className="text-[10px] uppercase tracking-[0.3em] opacity-60">Serving Now</p>
-                            <p className="mt-4 text-5xl font-black tracking-tight">
-                              {activePatient ? activePatient.displayToken : `${d.id}-0`}
-                            </p>
+                            <p className="mt-4 text-5xl font-black tracking-tight">{activePatient ? activePatient.display_token : `${d.id}-0`}</p>
                             <p className="mt-2 text-sm uppercase text-slate-400">
                               {activePatient ? `${activePatient.name} ${isReviewStage ? '(Lab Review Recall)' : '(Primary Check)'}` : 'No active patient'}
                             </p>
                           </div>
 
-                          <div className="mt-6 space-y-4">
-                            {activePatient ? (
-                              <div className="space-y-4">
-                                <div className="rounded-2xl bg-slate-50 p-4">
-                                  <p className="text-sm font-semibold text-slate-900">Active Workflow Mode</p>
-                                  <p className="mt-1 text-base font-bold text-blue-600">
-                                    {isReviewStage ? "👉 RETURNING LAB DATA VERIFICATION" : "👉 INITIAL TRIAGE & ANALYSIS ALLOCATION"}
-                                  </p>
-                                  {isReviewStage && (
-                                    <p className="text-xs text-emerald-600 bg-emerald-50 rounded-lg p-2 mt-2 border border-emerald-100 font-medium">
-                                      {activePatient.labResults}
-                                    </p>
-                                  )}
-                                </div>
+                          {activePatient && (
+                            <div className="mt-6 space-y-4">
+                              <div className="rounded-2xl bg-slate-50 p-4 text-sm font-semibold">
+                                <p className="text-slate-900">Workflow Mode: <span className="text-blue-600">{isReviewStage ? "RETURNING LAB DATA VERIFICATION" : "INITIAL TRIAGE ALLOCATION"}</span></p>
+                                {isReviewStage && <p className="text-xs text-emerald-600 mt-2 bg-emerald-50 p-2 rounded-lg">{activePatient.lab_results}</p>}
+                              </div>
 
-                                <div className="space-y-4">
-                                  {/* Diagnostic Pipeline Module */}
-                                  <div>
-                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">1. Diagnostics / Diagnostics Routing</label>
-                                    <div className="flex items-center gap-2">
-                                      <input
-                                        type="text"
-                                        disabled={isReviewStage}
-                                        placeholder={isReviewStage ? (activePatient.labTests || '') : "Type patient lab tests to run (e.g. CBC, Serum Urea, X-Ray)..."}
-                                        value={isReviewStage ? (activePatient.labTests || '') : (labInputs[d.id] || '')}
-                                        onChange={(e) => setLabInputs(prev => ({ ...prev, [d.id]: e.target.value }))}
-                                        className={`w-full p-4 border rounded-2xl outline-none text-sm transition ${isReviewStage ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200' : 'bg-slate-50 text-slate-800 focus:border-blue-500'
-                                          }`}
-                                      />
-                                      <button
-                                        onClick={() => sendToLab(d.id)}
-                                        disabled={isReviewStage}
-                                        className={`p-4 rounded-2xl transition border flex items-center justify-center ${isReviewStage
-                                          ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed'
-                                          : 'bg-blue-600 border-blue-700 text-white hover:bg-blue-700 shadow-sm'
-                                          }`}
-                                        title="Send to Lab & Hold Token"
-                                      >
-                                        <Beaker size={20} />
-                                      </button>
-                                    </div>
-                                  </div>
-
-                                  {/* Clinical Prescriptions Processing Block */}
-                                  <div>
-                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">2. Pharmacy Processing & Dismissal</label>
-                                    <div className="flex items-center gap-2">
-                                      <input
-                                        type="text"
-                                        disabled={!isReviewStage}
-                                        placeholder={!isReviewStage ? "Awaiting lab reports before active pharmacy formulary entries..." : "Type prescription formulas (e.g. Paracetamol 500mg TID)..."}
-                                        value={medInputs[activePatient.displayToken] || ''}
-                                        onChange={(e) => setMedInputs(prev => ({ ...prev, [activePatient.displayToken]: e.target.value }))}
-                                        className={`w-full p-4 border rounded-2xl outline-none text-sm transition ${!isReviewStage ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200' : 'bg-slate-50 text-slate-800 focus:border-emerald-500'
-                                          }`}
-                                      />
-                                      <button
-                                        onClick={() => completeVisit(d.id, activePatient.displayToken)}
-                                        disabled={!isReviewStage}
-                                        className={`p-4 rounded-2xl transition border flex items-center justify-center ${!isReviewStage
-                                          ? 'bg-slate-100 border-slate-200 text-slate-300 cursor-not-allowed'
-                                          : 'bg-emerald-600 border-emerald-700 text-white hover:bg-emerald-700 shadow-sm'
-                                          }`}
-                                        title="Finalize Prescriptions & Release Token"
-                                      >
-                                        <CheckCircle2 size={20} />
-                                      </button>
-                                    </div>
-                                  </div>
+                              <div>
+                                <label className="block text-xs font-bold uppercase text-slate-400 mb-1">1. Diagnostics Routing</label>
+                                <div className="flex gap-2">
+                                  <select disabled={isReviewStage} value={isReviewStage ? (activePatient.lab_tests || '') : (labInputs[d.id] || '')} onChange={(e) => setLabInputs(prev => ({ ...prev, [d.id]: e.target.value }))} className="w-full p-4 border rounded-2xl bg-slate-50 text-sm outline-none">
+                                    <option value="">Select Lab Diagnostic Test...</option>
+                                    <option value="Complete Blood Count (CBC)">Complete Blood Count (CBC)</option>
+                                    <option value="Chest X-Ray / Radiography">Chest X-Ray / Radiography</option>
+                                    <option value="Thyroid Profile (T3 T4 TSH)">Thyroid Profile (T3 T4 TSH)</option>
+                                    <option value="Urinalysis Assessment">Urinalysis Assessment</option>
+                                  </select>
+                                  <button onClick={() => sendToLab(d.id)} disabled={isReviewStage} className={`p-4 rounded-2xl border ${isReviewStage ? 'bg-slate-100 text-slate-300' : 'bg-blue-600 text-white'}`}><Beaker size={20} /></button>
                                 </div>
                               </div>
-                            ) : (
-                              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center text-slate-500">No patient currently loaded in workspace.</div>
-                            )}
-                          </div>
+
+                              <div>
+                                <label className="block text-xs font-bold uppercase text-slate-400 mb-1">2. Pharmacy Processing & Dismissal</label>
+                                <div className="flex gap-2">
+                                  <select disabled={!isReviewStage} value={medInputs[activePatient.display_token] || ''} onChange={(e) => setMedInputs(prev => ({ ...prev, [activePatient.display_token]: e.target.value }))} className="w-full p-4 border rounded-2xl bg-slate-50 text-sm outline-none">
+                                    <option value="">Select Clinical Formula...</option>
+                                    <option value="Paracetamol 500mg (TID - 5 Days)">Paracetamol 500mg (TID - 5 Days)</option>
+                                    <option value="Amoxicillin 500mg (BD - 3 Days)">Amoxicillin 500mg (BD - 3 Days)</option>
+                                    <option value="Cetirizine 10mg (OD - 10 Days)">Cetirizine 10mg (OD - 10 Days)</option>
+                                    <option value="Ibuprofen 400mg (PRN - Post Meals)">Ibuprofen 400mg (PRN - Post Meals)</option>
+                                  </select>
+                                  <button onClick={() => completeVisit(d.id, activePatient.display_token)} disabled={!isReviewStage} className={`p-4 rounded-2xl border ${!isReviewStage ? 'bg-slate-100 text-slate-300' : 'bg-emerald-600 text-white'}`}><CheckCircle2 size={20} /></button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
 
-                  {/* Sidebar Workflow Dashboards */}
                   <aside className="space-y-8">
                     <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-                      <div className="flex items-center justify-between mb-4">
-                        <div>
-                          <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">Hold / Labs Pending</p>
-                          <h3 className="text-2xl font-black text-slate-900">Patients Awaiting Labs</h3>
-                        </div>
-                        <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">{patients.filter(p => normalizeStatus(p) === PATIENT_STATUSES.HOLD_LAB).length}</span>
-                      </div>
+                      <h3 className="text-xl font-black text-slate-900 mb-4">Patients Awaiting Labs</h3>
                       <div className="space-y-3">
-                        {patients.filter(p => normalizeStatus(p) === PATIENT_STATUSES.HOLD_LAB).map((p) => (
-                          <div key={p.displayToken} className="w-full text-left rounded-2xl border px-4 py-4 border-slate-200 bg-white shadow-sm">
-                            <div className="flex items-center justify-between gap-4">
-                              <div>
-                                <p className="text-lg font-black text-slate-900">{p.displayToken}</p>
-                                <p className="text-sm text-slate-500">{p.name}</p>
-                              </div>
-                              <span className="rounded-full bg-amber-50 border border-amber-200 px-3 py-1 text-xs font-semibold uppercase text-amber-700">In Lab</span>
+                        {patients.filter(p => normalizeStatus(p) === PATIENT_STATUSES.HOLD_LAB).map(p => (
+                          <div key={p.display_token} className="p-4 border rounded-2xl bg-white shadow-sm flex justify-between items-center">
+                            <div>
+                              <p className="font-black text-slate-900">{p.display_token}</p>
+                              <p className="text-xs text-slate-500">{p.name} ({p.lab_tests})</p>
                             </div>
-                            <p className="mt-2 text-xs font-medium text-slate-400">Routed Test: <span className="text-slate-600">{p.labTests}</span></p>
+                            <span className="bg-amber-50 text-amber-700 text-[10px] px-2 py-1 rounded-full border border-amber-200 font-bold">IN LAB</span>
                           </div>
                         ))}
-                        {patients.filter(p => normalizeStatus(p) === PATIENT_STATUSES.HOLD_LAB).length === 0 && (
-                          <p className="text-sm text-slate-500">No tokens currently awaiting lab processing.</p>
-                        )}
                       </div>
                     </div>
 
                     <div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
-                      <div className="flex items-center justify-between mb-4">
-                        <div>
-                          <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-400">Ready for Review</p>
-                          <h3 className="text-2xl font-black text-slate-900">Doctor Recall</h3>
-                        </div>
-                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700">{patients.filter(p => normalizeStatus(p) === PATIENT_STATUSES.READY_FOR_REVIEW).length}</span>
-                      </div>
+                      <h3 className="text-xl font-black text-slate-900 mb-4">Doctor Recall Queue</h3>
                       <div className="space-y-3">
-                        {patients.filter(p => normalizeStatus(p) === PATIENT_STATUSES.READY_FOR_REVIEW).map((p) => (
-                          <button key={p.displayToken} onClick={() => selectReviewPatient(p.displayToken)} className={`w-full text-left rounded-2xl border px-4 py-4 transition ${selectedReviewToken === p.displayToken ? 'border-emerald-600 bg-emerald-50 shadow-md' : 'border-slate-200 bg-white hover:bg-slate-50 shadow-sm'} ${p.labResults && selectedReviewToken !== p.displayToken ? 'animate-pulse border-emerald-300' : ''}`}>
-                            <div className="flex items-center justify-between gap-4">
-                              <div>
-                                <p className="text-lg font-black text-slate-900">{p.displayToken}</p>
-                                <p className="text-sm text-slate-500">{p.name}</p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase text-slate-600">{p.deptId}</span>
-                                {selectedReviewToken !== p.displayToken && <span className="rounded-full bg-emerald-500 text-white px-2 py-0.5 text-[9px] font-black uppercase tracking-wider animate-bounce">Recall</span>}
-                              </div>
-                            </div>
-                            <p className="mt-2 text-xs text-slate-400 font-medium">Lab verified at {p.labCompletedAt || '—'}</p>
+                        {patients.filter(p => normalizeStatus(p) === PATIENT_STATUSES.READY_FOR_REVIEW).map(p => (
+                          <button key={p.display_token} onClick={() => selectReviewPatient(p.display_token)} className={`w-full text-left p-4 border rounded-2xl transition ${selectedReviewToken === p.display_token ? 'border-emerald-600 bg-emerald-50' : 'bg-white'}`}>
+                            <p className="font-black text-slate-900">{p.display_token}</p>
+                            <p className="text-xs text-slate-500">{p.name} ({p.dept_id})</p>
                           </button>
                         ))}
-                        {patients.filter(p => normalizeStatus(p) === PATIENT_STATUSES.READY_FOR_REVIEW).length === 0 && (
-                          <p className="text-sm text-slate-500">No results ready for re-evaluation.</p>
-                        )}
                       </div>
                     </div>
                   </aside>
+                </div>
+              </div>
+            )}
+
+            {view === 'manager' && (
+              <div className="grid lg:grid-cols-5 gap-8">
+                <div className="lg:col-span-2 bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100 h-fit">
+                  <h2 className="text-2xl font-black mb-6">Patient Entry Desk</h2>
+                  <form onSubmit={registerPatient} className="space-y-4">
+                    <input required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="Full Name" className="w-full p-4 border rounded-2xl bg-slate-50 outline-none text-sm" />
+                    <div className="grid grid-cols-2 gap-4">
+                      <input required value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="Phone" className="w-full p-4 border rounded-2xl bg-slate-50 outline-none text-sm" />
+                      <input required type="number" value={formData.age} onChange={e => setFormData({ ...formData, age: e.target.value })} placeholder="Age" className="w-full p-4 border rounded-2xl bg-slate-50 outline-none text-sm" />
+                    </div>
+                    <select value={formData.deptId} onChange={e => setFormData({ ...formData, deptId: e.target.value })} className="w-full p-4 border rounded-2xl bg-slate-50 font-semibold outline-none text-sm">
+                      {DEPARTMENTS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
+                    <textarea value={formData.complaint} onChange={e => setFormData({ ...formData, complaint: e.target.value })} placeholder="Chief Complaint Details..." rows="3" className="w-full p-4 border rounded-2xl bg-slate-50 outline-none text-sm resize-none" />
+                    <button type="submit" className="w-full bg-blue-600 text-white p-4 rounded-2xl font-bold hover:bg-blue-700 transition shadow-sm">Generate Queue Token</button>
+                  </form>
+                  <button onClick={resetSystemForNewDay} className="w-full mt-6 border border-red-200 text-red-500 p-3 rounded-2xl text-xs font-bold hover:bg-red-50 transition flex items-center justify-center gap-2"><Trash2 size={14} /> Reset System Database</button>
+                </div>
+
+                <div className="lg:col-span-3 bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100">
+                  <h2 className="text-2xl font-black mb-6">Master Patient Registry</h2>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <thead>
+                        <tr className="border-b uppercase text-xs text-slate-400 font-bold">
+                          <th className="pb-3">Token</th>
+                          <th className="pb-3">Patient</th>
+                          <th className="pb-3">Department</th>
+                          <th className="pb-3">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {patients.map(p => (
+                          <tr key={p.display_token}>
+                            <td className="py-3 font-black text-blue-600">{p.display_token}</td>
+                            <td className="py-3 font-medium">{p.name} <span className="text-xs text-slate-400">({p.age})</span></td>
+                            <td className="py-3 font-bold text-slate-500">{p.dept_id}</td>
+                            <td className="py-3"><span className="px-2 py-0.5 rounded text-xs font-bold bg-slate-100">{p.status}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {view === 'lab' && (
+              <div className="bg-white p-8 rounded-[2rem] border border-slate-200 max-w-2xl mx-auto shadow-sm">
+                <h2 className="text-2xl font-black mb-6">Diagnostics Desk</h2>
+                <div className="space-y-4">
+                  {labRequests.filter(r => r.status === 'Pending').length === 0 ? <p className="text-center py-6 text-slate-400 italic">No lab requests pending.</p> :
+                    labRequests.filter(r => r.status === 'Pending').map(r => (
+                      <div key={r.id} className="p-5 border rounded-2xl flex justify-between items-center bg-slate-50">
+                        <div>
+                          <p className="font-black text-blue-600 text-lg">{r.token}</p>
+                          <p className="text-sm text-slate-700 mt-1 font-medium">Test: {r.tests}</p>
+                        </div>
+                        <button onClick={() => completeLabRequest(r.id, r.token, r.tests)} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-700 transition shadow-sm">Release Findings</button>
+                      </div>
+                    ))
+                  }
                 </div>
               </div>
             )}
@@ -450,7 +508,7 @@ export default function SmartHospital() {
                   <div className="flex items-center gap-4 mb-8 border-b pb-6">
                     <div className="p-4 bg-emerald-50 text-emerald-600 rounded-2xl"><ShoppingBag size={32} /></div>
                     <div>
-                      <h2 className="text-3xl font-black">Medical Store</h2>
+                      <h2 className="text-3xl font-black text-slate-900">Medical Store</h2>
                       <p className="text-slate-500 font-bold">Pending Prescriptions</p>
                     </div>
                   </div>
@@ -458,7 +516,7 @@ export default function SmartHospital() {
                     {prescriptions.length === 0 ? <p className="text-center py-10 text-slate-400 italic">No prescriptions logged.</p> :
                       prescriptions.map(p => (
                         <div key={p.id} className={`p-6 rounded-3xl border flex flex-col md:flex-row justify-between items-center gap-4 ${p.status === 'Dispensed' ? 'bg-slate-50 opacity-60' : 'bg-emerald-50/30 border-emerald-100'}`}>
-                          <div className="flex-1">
+                          <div className="flex-1 text-left">
                             <div className="flex items-center gap-3 mb-1">
                               <span className="text-2xl font-black text-emerald-700">{p.token}</span>
                               <span className="text-xs font-bold text-slate-400">{p.timestamp}</span>
@@ -466,7 +524,7 @@ export default function SmartHospital() {
                             <p className="font-bold text-slate-700">Rx Formulary: <span className="font-medium text-slate-900">{p.medicines}</span></p>
                           </div>
                           {p.status === 'Pending' ? (
-                            <button onClick={() => setPrescriptions(prescriptions.map(pre => pre.id === p.id ? { ...pre, status: 'Dispensed' } : pre))} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-emerald-700 transition shadow-sm">Mark Dispensed</button>
+                            <button onClick={async () => { await supabase.from('prescriptions').update({ status: 'Dispensed' }).eq('id', p.id); fetchData(); }} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-emerald-700 transition shadow-sm">Mark Dispensed</button>
                           ) : <span className="text-emerald-600 font-black flex items-center gap-1"><CheckCircle2 size={18} /> Dispensed & Closed</span>}
                         </div>
                       ))
