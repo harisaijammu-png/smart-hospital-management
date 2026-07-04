@@ -128,7 +128,7 @@ export default function SmartHospital() {
     const nextWaiting = getNextWaitingPatient(dId);
     if (!nextWaiting) {
       alert(`No waiting patient available for ${dId}.`);
-      setServing(prev => ({ ...prev, [dId]: 0 }));
+      options(prev => ({ ...prev, [dId]: 0 }));
       return;
     }
 
@@ -147,7 +147,7 @@ export default function SmartHospital() {
 
     const tests = labInputs[dId]?.trim();
     if (!tests) {
-      alert('Please select or specify laboratory tests.');
+      alert('Please type down the specific lab tests needed.');
       return;
     }
 
@@ -183,7 +183,7 @@ export default function SmartHospital() {
   const completeVisit = (dId, activeToken) => {
     const medicines = medInputs[activeToken]?.trim();
     if (!medicines) {
-      alert('Please select or write prescribed medicines before completion.');
+      alert('Please type or write prescribed medicines before completion.');
       return;
     }
 
@@ -321,19 +321,15 @@ export default function SmartHospital() {
                                   <div>
                                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">1. Diagnostics / Diagnostics Routing</label>
                                     <div className="flex items-center gap-2">
-                                      <select
+                                      <input
+                                        type="text"
                                         disabled={isReviewStage}
+                                        placeholder={isReviewStage ? (activePatient.labTests || '') : "Type patient lab tests to run (e.g. CBC, Serum Urea, X-Ray)..."}
                                         value={isReviewStage ? (activePatient.labTests || '') : (labInputs[d.id] || '')}
                                         onChange={(e) => setLabInputs(prev => ({ ...prev, [d.id]: e.target.value }))}
                                         className={`w-full p-4 border rounded-2xl outline-none text-sm transition ${isReviewStage ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200' : 'bg-slate-50 text-slate-800 focus:border-blue-500'
                                           }`}
-                                      >
-                                        <option value="">Select Lab Diagnostic Test...</option>
-                                        <option value="Complete Blood Count (CBC)">Complete Blood Count (CBC)</option>
-                                        <option value="Chest X-Ray / Radiography">Chest X-Ray / Radiography</option>
-                                        <option value="Thyroid Profile (T3 T4 TSH)">Thyroid Profile (T3 T4 TSH)</option>
-                                        <option value="Urinalysis Assessment">Urinalysis Assessment</option>
-                                      </select>
+                                      />
                                       <button
                                         onClick={() => sendToLab(d.id)}
                                         disabled={isReviewStage}
@@ -352,19 +348,15 @@ export default function SmartHospital() {
                                   <div>
                                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">2. Pharmacy Processing & Dismissal</label>
                                     <div className="flex items-center gap-2">
-                                      <select
+                                      <input
+                                        type="text"
                                         disabled={!isReviewStage}
+                                        placeholder={!isReviewStage ? "Awaiting lab reports before active pharmacy formulary entries..." : "Type prescription formulas (e.g. Paracetamol 500mg TID)..."}
                                         value={medInputs[activePatient.displayToken] || ''}
                                         onChange={(e) => setMedInputs(prev => ({ ...prev, [activePatient.displayToken]: e.target.value }))}
                                         className={`w-full p-4 border rounded-2xl outline-none text-sm transition ${!isReviewStage ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200' : 'bg-slate-50 text-slate-800 focus:border-emerald-500'
                                           }`}
-                                      >
-                                        <option value="">Select Clinical Formula...</option>
-                                        <option value="Paracetamol 500mg (TID - 5 Days)">Paracetamol 500mg (TID - 5 Days)</option>
-                                        <option value="Amoxicillin 500mg (BD - 3 Days)">Amoxicillin 500mg (BD - 3 Days)</option>
-                                        <option value="Cetirizine 10mg (OD - 10 Days)">Cetirizine 10mg (OD - 10 Days)</option>
-                                        <option value="Ibuprofen 400mg (PRN - Post Meals)">Ibuprofen 400mg (PRN - Post Meals)</option>
-                                      </select>
+                                      />
                                       <button
                                         onClick={() => completeVisit(d.id, activePatient.displayToken)}
                                         disabled={!isReviewStage}
@@ -480,78 +472,6 @@ export default function SmartHospital() {
                       ))
                     }
                   </div>
-                </div>
-              </div>
-            )}
-
-            {view === 'manager' && (
-              <div className="grid lg:grid-cols-5 gap-8">
-                <div className="lg:col-span-2 bg-white p-8 rounded-[2rem] shadow-sm border border-slate-100 h-fit">
-                  <h2 className="text-2xl font-black mb-6">Patient Entry</h2>
-                  <form onSubmit={registerPatient} className="space-y-4">
-                    <input required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="Full Name" className="w-full p-4 border rounded-2xl bg-slate-50 outline-none" />
-                    <div className="grid grid-cols-2 gap-4">
-                      <input required value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} placeholder="Phone" className="w-full p-4 border rounded-2xl bg-slate-50 outline-none" />
-                      <input required value={formData.age} onChange={e => setFormData({ ...formData, age: e.target.value })} placeholder="Age" className="w-full p-4 border rounded-2xl bg-slate-50 outline-none" />
-                    </div>
-                    <select value={formData.deptId} onChange={e => setFormData({ ...formData, deptId: e.target.value })} className="w-full p-4 border rounded-2xl bg-slate-50 outline-none cursor-pointer">
-                      {DEPARTMENTS.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                    </select>
-                    <textarea required value={formData.complaint} onChange={e => setFormData({ ...formData, complaint: e.target.value })} placeholder="Complaint Details" rows="2" className="w-full p-4 border rounded-2xl bg-slate-50 outline-none"></textarea>
-                    <button className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black shadow-lg hover:bg-blue-700 transition">Issue Token</button>
-                  </form>
-                </div>
-                <div className="lg:col-span-3 space-y-4 max-h-[700px] overflow-y-auto pr-2">
-                  <div className="flex justify-between items-center mb-2 px-2">
-                    <h2 className="text-xl font-bold italic text-slate-400">Registrations</h2>
-                    <button onClick={resetSystemForNewDay} className="flex items-center gap-2 text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-4 py-2 rounded-xl transition font-bold text-sm shadow-sm">
-                      <Trash2 size={16} /> Reset Day
-                    </button>
-                  </div>
-                  {patients.slice().reverse().map(p => (
-                    <div key={p.displayToken} className="bg-white p-5 rounded-3xl border shadow-sm flex justify-between items-center">
-                      <div><p className="text-2xl font-black text-blue-600">{p.displayToken}</p><p className="font-bold text-slate-800">{p.name}</p></div>
-                      <span className="bg-slate-100 px-4 py-2 rounded-full text-[10px] font-black uppercase text-slate-500">{p.deptId}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {view === 'lab' && (
-              <div className="max-w-4xl mx-auto">
-                <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 min-h-[500px]">
-                  <div className="flex items-center gap-4 mb-8 border-b pb-6">
-                    <div className="p-4 bg-blue-50 text-blue-600 rounded-2xl"><Beaker size={32} /></div>
-                    <div>
-                      <h2 className="text-3xl font-black tracking-tight">Laboratory Requests</h2>
-                      <p className="text-slate-500 font-bold">Manage patient tests</p>
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    {labRequests.length === 0 ? <p className="text-center py-20 text-slate-400 italic">No diagnostic requests pending.</p> :
-                      labRequests.map(req => (
-                        <div key={req.id} className={`p-6 rounded-3xl border flex justify-between items-center ${req.status === 'Completed' ? 'bg-green-50/50 border-green-200' : 'bg-slate-50'}`}>
-                          <div>
-                            <span className="text-2xl font-black text-blue-600">{req.token}</span>
-                            <p className="font-bold text-slate-700">Test Required: <span className="font-medium text-slate-900">{req.tests}</span></p>
-                          </div>
-                          {req.status === 'Pending' ? (
-                            <button onClick={() => completeLabRequest(req.id)} className="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-800 shadow-sm transition">Transmit Results</button>
-                          ) : <span className="text-green-600 font-bold flex items-center gap-1">✓ Transmitted</span>}
-                        </div>
-                      ))
-                    }
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {view === 'patient' && (
-              <div className="max-w-xl mx-auto text-center mt-12">
-                <h1 className="text-5xl font-black text-slate-900 mb-10 tracking-tighter italic">Queue Tracker</h1>
-                <div className="relative mb-12 group">
-                  {/* Public queue interface code goes here */}
                 </div>
               </div>
             )}
