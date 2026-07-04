@@ -1,11 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import { Users, UserCircle, Stethoscope, Search, FileText, Trash2, Lock, Beaker, Pill, ShoppingBag, CheckCircle2 } from 'lucide-react';
 
-// Replace with your actual Supabase Project URL and Public Anon Key
-const SUPABASE_URL = "https://your-project-url.supabase.co";
-const SUPABASE_ANON_KEY = "your-anon-key";
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// API base URL
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000';
 
 const DEPARTMENTS = [
   { id: 'CARD', name: 'Cardiology' }, { id: 'GYN', name: 'Gynecology' },
@@ -72,30 +69,33 @@ export default function SmartHospital() {
   const [medInputs, setMedInputs] = useState({});
   const [selectedReviewToken, setSelectedReviewToken] = useState('');
 
-  // Fetch initial schema sets and establish live real-time synchronization channels
+  // Fetch initial data and establish polling
   useEffect(() => {
+    // Initialize database
+    fetch(`${API_BASE}/api/init-counters`).catch(err => console.error('Failed to initialize counters:', err));
+
     fetchData();
 
-    const patientChannel = supabase.channel('realtime_hospital_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'patients' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'lab_requests' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'prescriptions' }, () => fetchData())
-      .subscribe();
+    // Poll for updates every 2 seconds
+    const interval = setInterval(fetchData, 2000);
 
-    return () => {
-      supabase.removeChannel(patientChannel);
-    };
+    return () => clearInterval(interval);
   }, []);
 
   const fetchData = async () => {
-    const { data: ptData } = await supabase.from('patients').select('*').order('id', { ascending: true });
-    if (ptData) setPatients(ptData);
+    try {
+      const [ptRes, lbRes, rxRes] = await Promise.all([
+        fetch(`${API_BASE}/api/patients`),
+        fetch(`${API_BASE}/api/lab`),
+        fetch(`${API_BASE}/api/pharmacy`)
+      ]);
 
-    const { data: lbData } = await supabase.from('lab_requests').select('*').order('id', { ascending: false });
-    if (lbData) setLabRequests(lbData);
-
-    const { data: rxData } = await supabase.from('prescriptions').select('*').order('id', { ascending: false });
-    if (rxData) setPrescriptions(rxData);
+      if (ptRes.ok) setPatients(await ptRes.json());
+      if (lbRes.ok) setLabRequests(await lbRes.json());
+      if (rxRes.ok) setPrescriptions(await rxRes.json());
+    } catch (err) {
+      console.error('Failed to fetch data:', err);
+    }
   };
 
   const handleLogin = (e) => {
@@ -117,40 +117,47 @@ export default function SmartHospital() {
   const registerPatient = async (e) => {
     e.preventDefault();
 
-    // Step counter from persistent backend state
-    const { data: counterData } = await supabase
-      .from('dept_counters')
-      .select('current_count')
-      .eq('dept_id', formData.deptId)
-      .single();
+    try {
+      // Get current counter for department
+      const counterRes = await fetch(`${API_BASE}/api/dept-counter/${formData.deptId}`);
+      const counterData = await counterRes.json();
+      const tokenNumber = counterData.current_count;
+      const displayToken = `${formData.deptId}-${tokenNumber}`;
 
-    if (!counterData) return alert("System Counter sync breakdown.");
+      // Insert patient
+      const insertRes = await fetch(`${API_BASE}/api/patients`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          displayToken,
+          tokenNumber,
+          name: formData.name,
+          phone: formData.phone,
+          age: parseInt(formData.age),
+          gender: formData.gender,
+          address: formData.address,
+          complaint: formData.complaint,
+          deptId: formData.deptId,
+          status: PATIENT_STATUSES.WAITING,
+          time_joined: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        })
+      });
 
-    const tokenNumber = counterData.current_count;
-    const displayToken = `${formData.deptId}-${tokenNumber}`;
+      if (!insertRes.ok) throw new Error('Failed to register patient');
 
-    const { error: insertError } = await supabase.from('patients').insert([{
-      display_token: displayToken,
-      token_number: tokenNumber,
-      name: formData.name,
-      phone: formData.phone,
-      age: parseInt(formData.age),
-      gender: formData.gender,
-      address: formData.address,
-      complaint: formData.complaint,
-      dept_id: formData.deptId,
-      status: PATIENT_STATUSES.WAITING,
-      time_joined: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }]);
+      // Increment counter
+      await fetch(`${API_BASE}/api/dept-counter/${formData.deptId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentCount: tokenNumber + 1 })
+      });
 
-    if (insertError) return alert("Generation Error: " + insertError.message);
-
-    // Bump counter for next queue ticket
-    await supabase.from('dept_counters').update({ current_count: tokenNumber + 1 }).eq('dept_id', formData.deptId);
-
-    setFormData({ name: '', phone: '', age: '', gender: 'Male', address: '', complaint: '', deptId: 'CARD' });
-    alert(`Token issued successfully: ${displayToken}`);
-    fetchData();
+      setFormData({ name: '', phone: '', age: '', gender: 'Male', address: '', complaint: '', deptId: 'CARD' });
+      alert(`Token issued successfully: ${displayToken}`);
+      fetchData();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
   };
 
   const normalizeStatus = (p) => p.status || PATIENT_STATUSES.WAITING;
@@ -166,79 +173,125 @@ export default function SmartHospital() {
   };
 
   const nextPatient = async (dId) => {
-    if (getCurrentServingPatient(dId)) {
-      return alert('Finish or place the current patient on hold before calling the next one.');
+    try {
+      if (getCurrentServingPatient(dId)) {
+        return alert('Finish or place the current patient on hold before calling the next one.');
+      }
+
+      const nextWaiting = getNextWaitingPatient(dId);
+      if (!nextWaiting) return alert(`No waiting patient available for ${dId}.`);
+
+      await fetch(`${API_BASE}/api/patients/token/${nextWaiting.display_token}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: PATIENT_STATUSES.SERVING })
+      });
+
+      fetchData();
+    } catch (err) {
+      alert('Error: ' + err.message);
     }
-
-    const nextWaiting = getNextWaitingPatient(dId);
-    if (!nextWaiting) return alert(`No waiting patient available for ${dId}.`);
-
-    await supabase.from('patients').update({ status: PATIENT_STATUSES.SERVING }).eq('display_token', nextWaiting.display_token);
-    fetchData();
   };
 
   const sendToLab = async (dId) => {
-    const currentPatient = getCurrentServingPatient(dId);
-    if (!currentPatient) return alert('No active workspace loaded.');
+    try {
+      const currentPatient = getCurrentServingPatient(dId);
+      if (!currentPatient) return alert('No active workspace loaded.');
 
-    const tests = labInputs[dId]?.trim();
-    if (!tests) return alert('Please select or specify laboratory tests.');
+      const tests = labInputs[dId]?.trim();
+      if (!tests) return alert('Please select or specify laboratory tests.');
 
-    await supabase.from('patients').update({
-      status: PATIENT_STATUSES.HOLD_LAB,
-      lab_tests: tests,
-      lab_requested_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }).eq('display_token', currentPatient.display_token);
+      await fetch(`${API_BASE}/api/patients/token/${currentPatient.display_token}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: PATIENT_STATUSES.HOLD_LAB,
+          lab_tests: tests,
+          lab_requested_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        })
+      });
 
-    await supabase.from('lab_requests').insert([{
-      token: currentPatient.display_token,
-      dept_id: dId,
-      tests,
-      status: 'Pending',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }]);
+      await fetch(`${API_BASE}/api/lab`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: currentPatient.display_token,
+          tests,
+          dept_id: dId
+        })
+      });
 
-    setLabInputs(prev => ({ ...prev, [dId]: '' }));
-    fetchData();
+      setLabInputs(prev => ({ ...prev, [dId]: '' }));
+      fetchData();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
   };
 
   const completeLabRequest = async (id, token, tests) => {
-    await supabase.from('lab_requests').update({ status: 'Completed' }).eq('id', id);
-    await supabase.from('patients').update({
-      status: PATIENT_STATUSES.READY_FOR_REVIEW,
-      lab_completed_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      lab_results: `Results logged for ${tests}`
-    }).eq('display_token', token);
+    try {
+      await fetch(`${API_BASE}/api/lab/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Completed' })
+      });
 
-    fetchData();
+      await fetch(`${API_BASE}/api/patients/token/${token}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: PATIENT_STATUSES.READY_FOR_REVIEW,
+          lab_completed_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          lab_results: `Results logged for ${tests}`
+        })
+      });
+
+      fetchData();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
   };
 
   const completeVisit = async (dId, activeToken) => {
-    const medicines = medInputs[activeToken]?.trim();
-    if (!medicines) return alert('Please select or write prescribed medicines before completion.');
+    try {
+      const medicines = medInputs[activeToken]?.trim();
+      if (!medicines) return alert('Please select or write prescribed medicines before completion.');
 
-    await supabase.from('patients').update({ status: PATIENT_STATUSES.COMPLETED }).eq('display_token', activeToken);
-    await supabase.from('prescriptions').insert([{
-      token: activeToken,
-      medicines,
-      status: 'Pending',
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }]);
+      await fetch(`${API_BASE}/api/patients/token/${activeToken}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: PATIENT_STATUSES.COMPLETED })
+      });
 
-    setMedInputs(prev => ({ ...prev, [activeToken]: '' }));
-    if (selectedReviewToken === activeToken) setSelectedReviewToken('');
-    alert(`Visit Complete! Prescription forwarded to Pharmacy for ${activeToken}`);
-    fetchData();
+      await fetch(`${API_BASE}/api/pharmacy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: activeToken,
+          medicines
+        })
+      });
+
+      setMedInputs(prev => ({ ...prev, [activeToken]: '' }));
+      if (selectedReviewToken === activeToken) setSelectedReviewToken('');
+      alert(`Visit Complete! Prescription forwarded to Pharmacy for ${activeToken}`);
+      fetchData();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    }
   };
 
   const resetSystemForNewDay = async () => {
     if (window.confirm("Reset all database values? This drops tracking rows entirely.")) {
-      await supabase.from('prescriptions').delete().neq('id', 0);
-      await supabase.from('lab_requests').delete().neq('id', 0);
-      await supabase.from('patients').delete().neq('id', 0);
-      await supabase.from('dept_counters').update({ current_count: 1 }).neq('dept_id', '');
-      setSelectedReviewToken('');
-      fetchData();
+      try {
+        await fetch(`${API_BASE}/api/reset`, {
+          method: 'DELETE'
+        });
+        setSelectedReviewToken('');
+        fetchData();
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
     }
   };
 
@@ -525,7 +578,18 @@ export default function SmartHospital() {
                           </div>
                           {p.status === 'Pending' ? (
                             <button
-                              onClick={async () => { await supabase.from('prescriptions').update({ status: 'Dispensed' }).eq('id', p.id); fetchData(); }}
+                              onClick={async () => {
+                                try {
+                                  await fetch(`${API_BASE}/api/pharmacy/${p.id}`, {
+                                    method: 'PUT',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ status: 'Dispensed' })
+                                  });
+                                  fetchData();
+                                } catch (err) {
+                                  alert('Error: ' + err.message);
+                                }
+                              }}
                               className="bg-emerald-600 text-white px-6 py-3 rounded-2xl font-bold hover:bg-emerald-700 transition shadow-sm"
                             >
                               Dispense Medicines
