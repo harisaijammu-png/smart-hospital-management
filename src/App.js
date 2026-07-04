@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Users, UserCircle, Stethoscope, Search, FileText, Trash2, Lock, Beaker, Pill, ShoppingBag, CheckCircle2 } from 'lucide-react';
 
-// API base URL
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+// API base URL - use relative URLs for deployed environments
+const API_BASE = '';
 
 const DEPARTMENTS = [
   { id: 'CARD', name: 'Cardiology' }, { id: 'GYN', name: 'Gynecology' },
