@@ -424,7 +424,7 @@ export default function SmartHospital() {
                       <h3 className="text-xl font-black text-slate-900 mb-4">Doctor Recall Queue</h3>
                       <div className="space-y-3">
                         {patients.filter(p => normalizeStatus(p) === PATIENT_STATUSES.READY_FOR_REVIEW).map(p => (
-                          <button key={p.display_token} onClick={() => selectReviewPatient(p.display_token)} className={`w-full text-left p-4 border rounded-2xl transition ${selectedReviewToken === p.display_token ? 'border-emerald-600 bg-emerald-50' : 'bg-white'}`}>
+                          <button key={p.display_token} onClick={() => setSelectedReviewToken(p.display_token)} className={`w-full text-left p-4 border rounded-2xl transition ${selectedReviewToken === p.display_token ? 'border-emerald-600 bg-emerald-50' : 'bg-white'}`}>
                             <p className="font-black text-slate-900">{p.display_token}</p>
                             <p className="text-xs text-slate-500">{p.name} ({p.dept_id})</p>
                           </button>
@@ -524,8 +524,15 @@ export default function SmartHospital() {
                             <p className="font-bold text-slate-700">Rx Formulary: <span className="font-medium text-slate-900">{p.medicines}</span></p>
                           </div>
                           {p.status === 'Pending' ? (
-                            <button onClick={async () => { await supabase.from('prescriptions').update({ status: 'Dispensed' }).eq('id', p.id); fetchData(); }} className="bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-emerald-700 transition shadow-sm">Mark Dispensed</button>
-                          ) : <span className="text-emerald-600 font-black flex items-center gap-1"><CheckCircle2 size={18} /> Dispensed & Closed</span>}
+                            <button
+                              onClick={async () => { await supabase.from('prescriptions').update({ status: 'Dispensed' }).eq('id', p.id); fetchData(); }}
+                              className="bg-emerald-600 text-white px-6 py-3 rounded-2xl font-bold hover:bg-emerald-700 transition shadow-sm"
+                            >
+                              Dispense Medicines
+                            </button>
+                          ) : (
+                            <span className="bg-slate-100 text-slate-500 text-xs font-bold px-3 py-1 rounded-xl">Dispensed</span>
+                          )}
                         </div>
                       ))
                     }
