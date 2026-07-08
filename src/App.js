@@ -528,14 +528,18 @@ export default function SmartHospital() {
               <div className="bg-white p-8 rounded-[2rem] border border-slate-200 max-w-2xl mx-auto shadow-sm">
                 <h2 className="text-2xl font-black mb-6">Diagnostics Desk</h2>
                 <div className="space-y-4">
-                  {labRequests.filter(r => r.status === 'Pending').length === 0 ? <p className="text-center py-6 text-slate-400 italic">No lab requests pending.</p> :
-                    labRequests.filter(r => r.status === 'Pending').map(r => (
-                      <div key={r.id} className="p-5 border rounded-2xl flex justify-between items-center bg-slate-50">
+                  {labRequests.length === 0 ? <p className="text-center py-6 text-slate-400 italic">No lab requests logged.</p> :
+                    labRequests.map(r => (
+                      <div key={r.id} className={`p-5 border rounded-2xl flex justify-between items-center ${r.status === 'Completed' ? 'bg-slate-50 opacity-60' : 'bg-blue-50/30 border-blue-100'}`}>
                         <div>
                           <p className="font-black text-blue-600 text-lg">{r.token}</p>
-                          <p className="text-sm text-slate-700 mt-1 font-medium">Test: {r.tests}</p>
+                          <p className="text-sm text-slate-700 mt-1 font-medium">Test: <span className="font-medium text-slate-900">{r.tests}</span></p>
                         </div>
-                        <button onClick={() => completeLabRequest(r.id, r.token, r.tests)} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-700 transition shadow-sm">Release Findings</button>
+                        {r.status === 'Pending' ? (
+                          <button onClick={() => completeLabRequest(r.id, r.token, r.tests)} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-blue-700 transition shadow-sm">Release Findings</button>
+                        ) : (
+                          <span className="bg-slate-100 text-slate-500 text-xs font-bold px-3 py-1 rounded-xl">Completed</span>
+                        )}
                       </div>
                     ))
                   }
