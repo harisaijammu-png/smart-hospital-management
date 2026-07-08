@@ -347,36 +347,6 @@ export default function SmartHospital() {
           <>
             {view === 'patient' && (
               <div className="space-y-6">
-                <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex justify-between items-center flex-wrap gap-4">
-                  <div>
-                    <h2 className="text-3xl font-black">Live Department Queue Monitor</h2>
-                    <p className="text-slate-500 font-semibold mt-1">Real-time room operational token states</p>
-                  </div>
-                  {!isAuthenticated && (
-                    <button onClick={() => setView('doctor')} className="bg-blue-600 text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition shadow-sm"><Lock size={16} /> Control Desk</button>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {DEPARTMENTS.map(d => {
-                    const activeP = getCurrentServingPatient(d.id);
-                    const waitList = patients.filter(p => p.dept_id === d.id && normalizeStatus(p) === PATIENT_STATUSES.WAITING);
-                    return (
-                      <div key={d.id} className="bg-white border rounded-[2rem] p-6 shadow-sm flex flex-col justify-between">
-                        <div>
-                          <div className="flex justify-between items-start border-b pb-3 mb-4">
-                            <h3 className="font-black text-lg text-slate-800">{d.name}</h3>
-                            <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-lg font-bold">{waitList.length} Waiting</span>
-                          </div>
-                          <div className="bg-slate-900 text-center py-4 rounded-2xl text-white font-black text-3xl tracking-wide mb-4">
-                            {activeP ? activeP.display_token : `${d.id}-0`}
-                          </div>
-                        </div>
-                        <p className="text-xs text-center text-slate-400 font-medium">Next: {waitList[0]?.display_token || 'None'}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-                
                 <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm mt-8">
                   <div className="text-center mb-8">
                     <h2 className="text-4xl font-black text-slate-900 italic">Queue Tracker</h2>
@@ -447,6 +417,37 @@ export default function SmartHospital() {
                     )}
                   </div>
                 </div>
+
+                <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex justify-between items-center flex-wrap gap-4">
+                  <div>
+                    <h2 className="text-3xl font-black">Live Department Queue Monitor</h2>
+                    <p className="text-slate-500 font-semibold mt-1">Real-time room operational token states</p>
+                  </div>
+                  {!isAuthenticated && (
+                    <button onClick={() => setView('doctor')} className="bg-blue-600 text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition shadow-sm"><Lock size={16} /> Control Desk</button>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {DEPARTMENTS.map(d => {
+                    const activeP = getCurrentServingPatient(d.id);
+                    const waitList = patients.filter(p => p.dept_id === d.id && normalizeStatus(p) === PATIENT_STATUSES.WAITING);
+                    return (
+                      <div key={d.id} className="bg-white border rounded-[2rem] p-6 shadow-sm flex flex-col justify-between">
+                        <div>
+                          <div className="flex justify-between items-start border-b pb-3 mb-4">
+                            <h3 className="font-black text-lg text-slate-800">{d.name}</h3>
+                            <span className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-lg font-bold">{waitList.length} Waiting</span>
+                          </div>
+                          <div className="bg-slate-900 text-center py-4 rounded-2xl text-white font-black text-3xl tracking-wide mb-4">
+                            {activeP ? activeP.display_token : `${d.id}-0`}
+                          </div>
+                        </div>
+                        <p className="text-xs text-center text-slate-400 font-medium">Next: {waitList[0]?.display_token || 'None'}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+
 
               </div>
             )}
