@@ -426,13 +426,7 @@ export default function SmartHospital() {
                               <div>
                                 <label className="block text-xs font-bold uppercase text-slate-400 mb-1">1. Diagnostics Routing</label>
                                 <div className="flex gap-2">
-                                  <select disabled={isReviewStage} value={isReviewStage ? (activePatient.lab_tests || '') : (labInputs[d.id] || '')} onChange={(e) => setLabInputs(prev => ({ ...prev, [d.id]: e.target.value }))} className="w-full p-4 border rounded-2xl bg-slate-50 text-sm outline-none">
-                                    <option value="">Select Lab Diagnostic Test...</option>
-                                    <option value="Complete Blood Count (CBC)">Complete Blood Count (CBC)</option>
-                                    <option value="Chest X-Ray / Radiography">Chest X-Ray / Radiography</option>
-                                    <option value="Thyroid Profile (T3 T4 TSH)">Thyroid Profile (T3 T4 TSH)</option>
-                                    <option value="Urinalysis Assessment">Urinalysis Assessment</option>
-                                  </select>
+                                  <input type="text" placeholder="Type lab diagnostic tests..." disabled={isReviewStage} value={isReviewStage ? (activePatient.lab_tests || '') : (labInputs[d.id] || '')} onChange={(e) => setLabInputs(prev => ({ ...prev, [d.id]: e.target.value }))} className="w-full p-4 border rounded-2xl bg-slate-50 text-sm outline-none" />
                                   <button onClick={() => sendToLab(d.id)} disabled={isReviewStage} className={`p-4 rounded-2xl border ${isReviewStage ? 'bg-slate-100 text-slate-300' : 'bg-blue-600 text-white'}`}><Beaker size={20} /></button>
                                 </div>
                               </div>
@@ -440,13 +434,7 @@ export default function SmartHospital() {
                               <div>
                                 <label className="block text-xs font-bold uppercase text-slate-400 mb-1">2. Pharmacy Processing & Dismissal</label>
                                 <div className="flex gap-2">
-                                  <select disabled={!isReviewStage} value={medInputs[activePatient.display_token] || ''} onChange={(e) => setMedInputs(prev => ({ ...prev, [activePatient.display_token]: e.target.value }))} className="w-full p-4 border rounded-2xl bg-slate-50 text-sm outline-none">
-                                    <option value="">Select Clinical Formula...</option>
-                                    <option value="Paracetamol 500mg (TID - 5 Days)">Paracetamol 500mg (TID - 5 Days)</option>
-                                    <option value="Amoxicillin 500mg (BD - 3 Days)">Amoxicillin 500mg (BD - 3 Days)</option>
-                                    <option value="Cetirizine 10mg (OD - 10 Days)">Cetirizine 10mg (OD - 10 Days)</option>
-                                    <option value="Ibuprofen 400mg (PRN - Post Meals)">Ibuprofen 400mg (PRN - Post Meals)</option>
-                                  </select>
+                                  <input type="text" placeholder="Type prescribed medicines..." disabled={!isReviewStage} value={medInputs[activePatient.display_token] || ''} onChange={(e) => setMedInputs(prev => ({ ...prev, [activePatient.display_token]: e.target.value }))} className="w-full p-4 border rounded-2xl bg-slate-50 text-sm outline-none" />
                                   <button onClick={() => completeVisit(d.id, activePatient.display_token)} disabled={!isReviewStage} className={`p-4 rounded-2xl border ${!isReviewStage ? 'bg-slate-100 text-slate-300' : 'bg-emerald-600 text-white'}`}><CheckCircle2 size={20} /></button>
                                 </div>
                               </div>
