@@ -347,6 +347,16 @@ export default function SmartHospital() {
           <>
             {view === 'patient' && (
               <div className="space-y-6">
+                <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex justify-between items-center flex-wrap gap-4">
+                  <div>
+                    <h2 className="text-3xl font-black">Live Department Queue Monitor</h2>
+                    <p className="text-slate-500 font-semibold mt-1">Real-time room operational token states</p>
+                  </div>
+                  {!isAuthenticated && (
+                    <button onClick={() => setView('doctor')} className="bg-blue-600 text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition shadow-sm"><Lock size={16} /> Control Desk</button>
+                  )}
+                </div>
+
                 <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm mt-8">
                   <div className="text-center mb-8">
                     <h2 className="text-4xl font-black text-slate-900 italic">Queue Tracker</h2>
@@ -418,15 +428,6 @@ export default function SmartHospital() {
                   </div>
                 </div>
 
-                <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex justify-between items-center flex-wrap gap-4">
-                  <div>
-                    <h2 className="text-3xl font-black">Live Department Queue Monitor</h2>
-                    <p className="text-slate-500 font-semibold mt-1">Real-time room operational token states</p>
-                  </div>
-                  {!isAuthenticated && (
-                    <button onClick={() => setView('doctor')} className="bg-blue-600 text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition shadow-sm"><Lock size={16} /> Control Desk</button>
-                  )}
-                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {DEPARTMENTS.map(d => {
                     const activeP = getCurrentServingPatient(d.id);
