@@ -304,7 +304,7 @@ export default function SmartHospital() {
           <button onClick={() => setView('manager')} className={`flex items-center gap-2 px-4 py-2 rounded-xl transition ${view === 'manager' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}><Users size={18} /> Staff</button>
           <button onClick={() => setView('lab')} className={`flex items-center gap-2 px-4 py-2 rounded-xl transition ${view === 'lab' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}><Beaker size={18} /> Lab</button>
           <button onClick={() => setView('pharmacy')} className={`flex items-center gap-2 px-4 py-2 rounded-xl transition ${view === 'pharmacy' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}><Pill size={18} /> Pharmacy</button>
-          <button onClick={() => setView('patient')} className={`flex items-center gap-2 px-4 py-2 rounded-xl transition ${view === 'patient' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}><UserCircle size={18} /> Patients</button>
+
           <button onClick={logout} className="text-red-500 font-bold ml-4 border-l pl-4 hover:text-red-700">Logout</button>
         </nav>
       )}
