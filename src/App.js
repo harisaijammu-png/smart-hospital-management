@@ -68,6 +68,7 @@ export default function SmartHospital() {
   const [labInputs, setLabInputs] = useState({});
   const [medInputs, setMedInputs] = useState({});
   const [selectedReviewToken, setSelectedReviewToken] = useState('');
+  const [searchToken, setSearchToken] = useState('');
 
   // Fetch initial data and establish polling
   useEffect(() => {
@@ -375,6 +376,79 @@ export default function SmartHospital() {
                     );
                   })}
                 </div>
+                </div>
+                
+                <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm mt-8">
+                  <div className="text-center mb-8">
+                    <h2 className="text-4xl font-black text-slate-900 italic">Queue Tracker</h2>
+                    <p className="text-slate-400 font-medium mt-2">Hospital token monitoring system</p>
+                  </div>
+                  
+                  <div className="max-w-xl mx-auto">
+                    <div className="relative">
+                      <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300" size={28} />
+                      <input 
+                        type="text" 
+                        placeholder="E.G. CARD-1" 
+                        value={searchToken}
+                        onChange={(e) => setSearchToken(e.target.value.toUpperCase())}
+                        className="w-full text-2xl font-black text-slate-600 pl-16 pr-6 py-6 rounded-[2rem] border-2 border-blue-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100 transition placeholder:font-bold placeholder:text-slate-300"
+                      />
+                    </div>
+
+                    {searchToken && (
+                      <div className="mt-8 p-6 bg-slate-50 rounded-[2rem] border border-slate-100">
+                        {(() => {
+                          const patient = patients.find(p => p.display_token === searchToken);
+                          if (!patient) return <p className="text-center text-slate-400 font-bold">Token not found. Please check your token number.</p>;
+                          
+                          const dept = DEPARTMENTS.find(d => d.id === patient.dept_id);
+                          const activeP = getCurrentServingPatient(patient.dept_id);
+                          const status = normalizeStatus(patient);
+                          
+                          if (status === PATIENT_STATUSES.SERVING) {
+                            return <p className="text-center text-emerald-600 font-black text-2xl">You are currently being served in {dept?.name}!</p>;
+                          }
+                          if (status === PATIENT_STATUSES.HOLD_LAB) {
+                            return <p className="text-center text-amber-600 font-black text-xl">You are on hold waiting for lab results.</p>;
+                          }
+                          if (status === PATIENT_STATUSES.COMPLETED) {
+                            return <p className="text-center text-blue-600 font-black text-xl">Your visit is complete.</p>;
+                          }
+                          if (status === PATIENT_STATUSES.READY_FOR_REVIEW) {
+                            return <p className="text-center text-blue-600 font-black text-xl">Your lab results are ready. The doctor will review them shortly.</p>;
+                          }
+                          
+                          // Waiting
+                          const waitList = patients.filter(p => p.dept_id === patient.dept_id && normalizeStatus(p) === PATIENT_STATUSES.WAITING);
+                          const myIndex = waitList.findIndex(p => p.id === patient.id);
+                          
+                          if (myIndex === -1) return null;
+                          
+                          const estimatedMins = myIndex * 20;
+                          
+                          return (
+                            <div className="space-y-4">
+                              <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                                <span className="text-slate-500 font-bold">Currently Serving</span>
+                                <span className="font-black text-xl text-slate-900">{activeP ? activeP.display_token : 'None'}</span>
+                              </div>
+                              <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                                <span className="text-slate-500 font-bold">Tokens Before You</span>
+                                <span className="font-black text-xl text-blue-600">{myIndex}</span>
+                              </div>
+                              <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border-l-4 border-l-amber-400">
+                                <span className="text-slate-500 font-bold">Estimated Wait Time</span>
+                                <span className="font-black text-xl text-amber-600">{estimatedMins === 0 ? 'Less than 20 mins' : `~${estimatedMins} mins`}</span>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
               </div>
             )}
 
