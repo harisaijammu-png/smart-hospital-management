@@ -1,5 +1,5 @@
 const express = require('express');
-const mysql = require('mysql2/promise');
+const { Pool } = require('pg');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
@@ -9,26 +9,24 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Create MySQL connection pool
-const pool = mysql.createPool({
+const poolConfig = process.env.DATABASE_URL ? {
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+} : {
     host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
+    user: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_NAME || 'hospital_db',
-    port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 3306,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
-});
+    port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 5432
+};
 
-// Initialize database tables if they don't exist
+const pool = new Pool(poolConfig);
+
 const initDatabase = async () => {
     try {
-        const connection = await pool.getConnection();
-
-        await connection.query(`
+        await pool.query(`
             CREATE TABLE IF NOT EXISTS patients (
-                id INT AUTO_INCREMENT PRIMARY KEY,
+                id SERIAL PRIMARY KEY,
                 displaytoken VARCHAR(50),
                 tokennumber VARCHAR(50),
                 name VARCHAR(100),
@@ -48,9 +46,9 @@ const initDatabase = async () => {
             )
         `);
 
-        await connection.query(`
+        await pool.query(`
             CREATE TABLE IF NOT EXISTS lab_requests (
-                id INT AUTO_INCREMENT PRIMARY KEY,
+                id SERIAL PRIMARY KEY,
                 token VARCHAR(50),
                 tests TEXT,
                 status VARCHAR(50) DEFAULT 'Pending',
@@ -58,9 +56,9 @@ const initDatabase = async () => {
             )
         `);
 
-        await connection.query(`
+        await pool.query(`
             CREATE TABLE IF NOT EXISTS prescriptions (
-                id INT AUTO_INCREMENT PRIMARY KEY,
+                id SERIAL PRIMARY KEY,
                 token VARCHAR(50),
                 medicines TEXT,
                 status VARCHAR(50) DEFAULT 'Pending',
@@ -68,97 +66,76 @@ const initDatabase = async () => {
             )
         `);
 
-        await connection.query(`
+        await pool.query(`
             CREATE TABLE IF NOT EXISTS dept_counters (
                 dept_id VARCHAR(50) PRIMARY KEY,
                 current_count INT DEFAULT 1
             )
         `);
 
-        connection.release();
         console.log('Database tables initialized');
     } catch (err) {
         console.error('Failed to initialize database:', err);
     }
 };
 
-// Initialize database on startup
 initDatabase();
 
-// Init counters endpoint
 app.post('/api/init-counters', async (req, res) => {
     try {
-        const connection = await pool.getConnection();
-
         const DEPARTMENTS = ['CARD', 'GYN', 'OPH', 'PED', 'ORTHO', 'DERM', 'NEURO', 'ENT', 'DENT', 'GEN'];
 
         for (const dept of DEPARTMENTS) {
             try {
-                await connection.query(
-                    'INSERT INTO dept_counters (dept_id, current_count) VALUES (?, ?) ON DUPLICATE KEY UPDATE current_count = current_count',
+                await pool.query(
+                    'INSERT INTO dept_counters (dept_id, current_count) VALUES ($1, $2) ON CONFLICT (dept_id) DO UPDATE SET current_count = EXCLUDED.current_count',
                     [dept, 1]
                 );
             } catch (err) {
-                // Ignore if already exists
+                // Ignore
             }
         }
 
-        connection.release();
         res.json({ message: 'Counters initialized' });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// Get department counter
 app.get('/api/dept-counter/:deptId', async (req, res) => {
     try {
         const { deptId } = req.params;
-        const connection = await pool.getConnection();
+        const { rows } = await pool.query('SELECT current_count FROM dept_counters WHERE dept_id = $1', [deptId]);
 
-        const [result] = await connection.query('SELECT current_count FROM dept_counters WHERE dept_id = ?', [deptId]);
-
-        if (result.length === 0) {
-            await connection.query('INSERT INTO dept_counters (dept_id, current_count) VALUES (?, ?)', [deptId, 1]);
-            connection.release();
+        if (rows.length === 0) {
+            await pool.query('INSERT INTO dept_counters (dept_id, current_count) VALUES ($1, $2)', [deptId, 1]);
             res.json({ current_count: 1 });
         } else {
-            connection.release();
-            res.json({ current_count: result[0].current_count });
+            res.json({ current_count: rows[0].current_count });
         }
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// Update department counter
 app.put('/api/dept-counter/:deptId', async (req, res) => {
     try {
         const { deptId } = req.params;
         const { currentCount } = req.body;
-        const connection = await pool.getConnection();
-
-        await connection.query('UPDATE dept_counters SET current_count = ? WHERE dept_id = ?', [currentCount, deptId]);
-
-        connection.release();
+        await pool.query('UPDATE dept_counters SET current_count = $1 WHERE dept_id = $2', [currentCount, deptId]);
         res.json({ updated: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// Patient Routes
 app.post('/api/patients', async (req, res) => {
     try {
         const { displayToken, tokenNumber, name, phone, age, gender, address, complaint, deptId, status, time_joined } = req.body;
-        const connection = await pool.getConnection();
-
-        await connection.query(
-            'INSERT INTO patients (displaytoken, tokennumber, name, phone, age, gender, address, complaint, deptid, status, time_joined) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        await pool.query(
+            'INSERT INTO patients (displaytoken, tokennumber, name, phone, age, gender, address, complaint, deptid, status, time_joined) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
             [displayToken, tokenNumber, name, phone, age, gender, address, complaint, deptId, status || 'WAITING', time_joined]
         );
-
-        connection.release();
         res.status(201).json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -167,10 +144,8 @@ app.post('/api/patients', async (req, res) => {
 
 app.get('/api/patients', async (req, res) => {
     try {
-        const connection = await pool.getConnection();
-        const [result] = await connection.query('SELECT * FROM patients ORDER BY id DESC');
-
-        const patients = result.map(p => ({
+        const { rows } = await pool.query('SELECT * FROM patients ORDER BY id DESC');
+        const patients = rows.map(p => ({
             id: p.id,
             display_token: p.displaytoken,
             token_number: p.tokennumber,
@@ -188,15 +163,12 @@ app.get('/api/patients', async (req, res) => {
             lab_completed_at: p.lab_completed_at,
             lab_results: p.lab_results
         }));
-
-        connection.release();
         res.json(patients);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// Update patient status
 app.put('/api/patients/token/:token', async (req, res) => {
     try {
         const { token } = req.params;
@@ -204,59 +176,50 @@ app.put('/api/patients/token/:token', async (req, res) => {
 
         const updates = [];
         const values = [];
+        let paramCount = 1;
 
         if (status) {
-            updates.push('status = ?');
+            updates.push(`status = $${paramCount++}`);
             values.push(status);
         }
         if (lab_tests) {
-            updates.push('lab_tests = ?');
+            updates.push(`lab_tests = $${paramCount++}`);
             values.push(lab_tests);
         }
         if (lab_requested_at) {
-            updates.push('lab_requested_at = ?');
+            updates.push(`lab_requested_at = $${paramCount++}`);
             values.push(lab_requested_at);
         }
         if (lab_completed_at) {
-            updates.push('lab_completed_at = ?');
+            updates.push(`lab_completed_at = $${paramCount++}`);
             values.push(lab_completed_at);
         }
         if (lab_results) {
-            updates.push('lab_results = ?');
+            updates.push(`lab_results = $${paramCount++}`);
             values.push(lab_results);
         }
-
-        values.push(token);
 
         if (updates.length === 0) {
             return res.json({ success: true });
         }
 
-        const connection = await pool.getConnection();
-        await connection.query(
-            `UPDATE patients SET ${updates.join(', ')} WHERE displaytoken = ?`,
+        values.push(token);
+        
+        await pool.query(
+            `UPDATE patients SET ${updates.join(', ')} WHERE displaytoken = $${paramCount}`,
             values
         );
 
-        connection.release();
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// Lab Routes
 app.post('/api/lab', async (req, res) => {
     try {
-        const { token, tests, dept_id, status } = req.body;
-        const connection = await pool.getConnection();
-
-        await connection.query(
-            'INSERT INTO lab_requests (token, tests) VALUES (?, ?)',
-            [token, tests]
-        );
-
-        connection.release();
+        const { token, tests } = req.body;
+        await pool.query('INSERT INTO lab_requests (token, tests) VALUES ($1, $2)', [token, tests]);
         res.status(201).json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -265,17 +228,13 @@ app.post('/api/lab', async (req, res) => {
 
 app.get('/api/lab', async (req, res) => {
     try {
-        const connection = await pool.getConnection();
-        const [result] = await connection.query('SELECT * FROM lab_requests ORDER BY id DESC');
-
-        const labRequests = result.map(r => ({
+        const { rows } = await pool.query('SELECT * FROM lab_requests ORDER BY id DESC');
+        const labRequests = rows.map(r => ({
             id: r.id,
             token: r.token,
             tests: r.tests,
             status: r.status || 'Pending'
         }));
-
-        connection.release();
         res.json(labRequests);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -286,29 +245,17 @@ app.put('/api/lab/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
-        const connection = await pool.getConnection();
-
-        await connection.query('UPDATE lab_requests SET status = ? WHERE id = ?', [status, id]);
-
-        connection.release();
+        await pool.query('UPDATE lab_requests SET status = $1 WHERE id = $2', [status, id]);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// Pharmacy Routes
 app.post('/api/pharmacy', async (req, res) => {
     try {
         const { token, medicines } = req.body;
-        const connection = await pool.getConnection();
-
-        await connection.query(
-            'INSERT INTO prescriptions (token, medicines) VALUES (?, ?)',
-            [token, medicines]
-        );
-
-        connection.release();
+        await pool.query('INSERT INTO prescriptions (token, medicines) VALUES ($1, $2)', [token, medicines]);
         res.status(201).json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -317,18 +264,14 @@ app.post('/api/pharmacy', async (req, res) => {
 
 app.get('/api/pharmacy', async (req, res) => {
     try {
-        const connection = await pool.getConnection();
-        const [result] = await connection.query('SELECT * FROM prescriptions ORDER BY id DESC');
-
-        const prescriptions = result.map(p => ({
+        const { rows } = await pool.query('SELECT * FROM prescriptions ORDER BY id DESC');
+        const prescriptions = rows.map(p => ({
             id: p.id,
             token: p.token,
             medicines: p.medicines,
             status: p.status || 'Pending',
             timestamp: p.created_at ? new Date(p.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
         }));
-
-        connection.release();
         res.json(prescriptions);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -339,32 +282,23 @@ app.put('/api/pharmacy/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
-        const connection = await pool.getConnection();
-
-        await connection.query('UPDATE prescriptions SET status = ? WHERE id = ?', [status, id]);
-
-        connection.release();
+        await pool.query('UPDATE prescriptions SET status = $1 WHERE id = $2', [status, id]);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// Reset System
 app.delete('/api/reset', async (req, res) => {
     try {
-        const connection = await pool.getConnection();
-
-        await connection.query('DELETE FROM patients');
-        await connection.query('DELETE FROM lab_requests');
-        await connection.query('DELETE FROM prescriptions');
+        await pool.query('DELETE FROM patients');
+        await pool.query('DELETE FROM lab_requests');
+        await pool.query('DELETE FROM prescriptions');
 
         const DEPARTMENTS = ['CARD', 'GYN', 'OPH', 'PED', 'ORTHO', 'DERM', 'NEURO', 'ENT', 'DENT', 'GEN'];
         for (const dept of DEPARTMENTS) {
-            await connection.query('UPDATE dept_counters SET current_count = 1 WHERE dept_id = ?', [dept]);
+            await pool.query('UPDATE dept_counters SET current_count = 1 WHERE dept_id = $1', [dept]);
         }
-
-        connection.release();
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -374,7 +308,6 @@ app.delete('/api/reset', async (req, res) => {
 const PORT = process.env.PORT || 5000;
 const buildPath = path.join(__dirname, 'build');
 
-// Serve React build if it exists
 if (fs.existsSync(buildPath)) {
     app.use(express.static(buildPath));
     app.get('*', (req, res) => {
