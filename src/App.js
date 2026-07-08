@@ -376,7 +376,6 @@ export default function SmartHospital() {
                     );
                   })}
                 </div>
-                </div>
                 
                 <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm mt-8">
                   <div className="text-center mb-8">
