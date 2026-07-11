@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserCircle, Stethoscope, Search, FileText, Trash2, Lock, Beaker, Pill, ShoppingBag, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
+import { Users, UserCircle, Stethoscope, Search, FileText, Trash2, Lock, Beaker, Pill, ShoppingBag, CheckCircle2, Clock, AlertTriangle, Activity } from 'lucide-react';
 
 // API base URL - explicitly pointing to the production Render backend for the mobile app
 const API_BASE = 'https://smart-hospital-management-cp9n.onrender.com';
@@ -304,8 +304,11 @@ export default function SmartHospital() {
           <button onClick={() => setView('manager')} className={`flex items-center gap-2 px-4 py-2 rounded-xl transition ${view === 'manager' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}><Users size={18} /> Staff</button>
           <button onClick={() => setView('lab')} className={`flex items-center gap-2 px-4 py-2 rounded-xl transition ${view === 'lab' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}><Beaker size={18} /> Lab</button>
           <button onClick={() => setView('pharmacy')} className={`flex items-center gap-2 px-4 py-2 rounded-xl transition ${view === 'pharmacy' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50'}`}><Pill size={18} /> Pharmacy</button>
+          
+          <div className="w-px bg-slate-200 mx-2"></div>
+          <button onClick={() => setView('patient')} className={`flex items-center gap-2 px-4 py-2 rounded-xl transition ${view === 'patient' ? 'bg-emerald-600 text-white shadow-lg' : 'text-emerald-600 font-bold hover:bg-emerald-50'}`}><Activity size={18} /> Live Monitor</button>
 
-          <button onClick={logout} className="text-red-500 font-bold ml-4 border-l pl-4 hover:text-red-700">Logout</button>
+          <button onClick={logout} className="text-red-500 font-bold ml-2 border-l border-slate-200 pl-4 hover:text-red-700">Logout</button>
         </nav>
       )}
 
