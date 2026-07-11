@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserCircle, Stethoscope, Search, FileText, Trash2, Lock, Beaker, Pill, ShoppingBag, CheckCircle2 } from 'lucide-react';
+import { Users, UserCircle, Stethoscope, Search, FileText, Trash2, Lock, Beaker, Pill, ShoppingBag, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
 
 // API base URL - explicitly pointing to the production Render backend for the mobile app
 const API_BASE = 'https://smart-hospital-management-cp9n.onrender.com';
@@ -355,6 +355,33 @@ export default function SmartHospital() {
                   {!isAuthenticated && (
                     <button onClick={() => setView('doctor')} className="bg-blue-600 text-white px-5 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-blue-700 transition shadow-sm"><Lock size={16} /> Control Desk</button>
                   )}
+                </div>
+
+                <div className="bg-white p-6 rounded-[2rem] border border-slate-200 shadow-sm flex flex-col xl:flex-row gap-6 justify-between items-center">
+                  <div className="flex-1 space-y-4 w-full">
+                    <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                      <Clock className="text-blue-600" size={24} />
+                      Hospital Timings
+                    </h3>
+                    <div className="flex flex-wrap gap-4">
+                      <div className="bg-blue-50 text-blue-800 px-4 py-2 rounded-xl font-bold flex-1 text-center border border-blue-100">
+                        Morning<br/><span className="text-sm font-medium">09:00 AM - 12:00 PM</span>
+                      </div>
+                      <div className="bg-blue-50 text-blue-800 px-4 py-2 rounded-xl font-bold flex-1 text-center border border-blue-100">
+                        Afternoon<br/><span className="text-sm font-medium">01:00 PM - 04:00 PM</span>
+                      </div>
+                      <div className="bg-blue-50 text-blue-800 px-4 py-2 rounded-xl font-bold flex-1 text-center border border-blue-100">
+                        Evening<br/><span className="text-sm font-medium">06:00 PM - 09:00 PM</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="xl:w-1/3 w-full bg-rose-50 border border-rose-100 p-4 rounded-xl flex items-start gap-3">
+                    <AlertTriangle className="text-rose-600 shrink-0 mt-1" size={24} />
+                    <div>
+                      <h4 className="font-bold text-rose-800">Emergency Services</h4>
+                      <p className="text-sm text-rose-600 font-medium mt-1">Emergency doctors are available immediately 24/7 if there is any medical emergency.</p>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm mt-8">
