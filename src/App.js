@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Users, UserCircle, Stethoscope, Search, FileText, Trash2, Lock, Beaker, Pill, ShoppingBag, CheckCircle2 } from 'lucide-react';
 
-// API base URL - use relative URLs for deployed environments
-const API_BASE = '';
+// API base URL - explicitly pointing to the production Render backend for the mobile app
+const API_BASE = 'https://smart-hospital-management-cp9n.onrender.com';
 
 const DEPARTMENTS = [
   { id: 'CARD', name: 'Cardiology' }, { id: 'GYN', name: 'Gynecology' },
@@ -404,7 +404,7 @@ export default function SmartHospital() {
                           
                           if (myIndex === -1) return null;
                           
-                          const estimatedMins = myIndex * 20;
+                          const estimatedMins = (myIndex + 1) * 20;
                           
                           return (
                             <div className="space-y-4">
@@ -413,12 +413,18 @@ export default function SmartHospital() {
                                 <span className="font-black text-xl text-slate-900">{activeP ? activeP.display_token : 'None'}</span>
                               </div>
                               <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                                <span className="text-slate-500 font-bold">Tokens Before You</span>
+                                <span className="text-slate-500 font-bold">Tokens Ahead</span>
                                 <span className="font-black text-xl text-blue-600">{myIndex}</span>
                               </div>
-                              <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border-l-4 border-l-amber-400">
+                              <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-100">
                                 <span className="text-slate-500 font-bold">Estimated Wait Time</span>
-                                <span className="font-black text-xl text-amber-600">{estimatedMins === 0 ? 'Less than 20 mins' : `~${estimatedMins} mins`}</span>
+                                <span className="font-black text-xl text-amber-600">~{estimatedMins} mins</span>
+                              </div>
+                              <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border-l-4 border-l-amber-400">
+                                <span className="text-slate-500 font-bold">Expected Time</span>
+                                <span className="font-black text-xl text-amber-600">
+                                  {new Date(Date.now() + estimatedMins * 60000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
                               </div>
                             </div>
                           );
