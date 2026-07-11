@@ -384,13 +384,35 @@ export default function SmartHospital() {
                   </div>
                 </div>
 
-                <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm mt-8">
-                  <div className="text-center mb-8">
-                    <h2 className="text-4xl font-black text-slate-900 italic">Queue Tracker</h2>
-                    <p className="text-slate-400 font-medium mt-2">Hospital token monitoring system</p>
+                <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm mt-8 flex flex-col lg:flex-row gap-12 items-center">
+                  <div className="flex-1 space-y-8 text-left w-full">
+                    <div>
+                      <h2 className="text-5xl font-black text-slate-900 italic tracking-tight">Queue Tracker</h2>
+                      <p className="text-blue-600 font-bold text-xl mt-2 tracking-wide uppercase">Smart Hospital Management</p>
+                    </div>
+                    <div className="space-y-6 bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                      <div className="flex items-start gap-4">
+                        <div className="bg-blue-100 p-4 rounded-2xl text-blue-600 shrink-0 shadow-sm">
+                          <Stethoscope size={28} />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-2xl text-slate-800">Stop Waiting!</h4>
+                          <p className="text-slate-600 mt-2 font-medium text-lg leading-relaxed">We are in 2026 now! Say goodbye to crowded waiting rooms and long queues at the hospital.</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-4">
+                        <div className="bg-emerald-100 p-4 rounded-2xl text-emerald-600 shrink-0 shadow-sm">
+                          <CheckCircle2 size={28} />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-2xl text-slate-800">Track From Anywhere</h4>
+                          <p className="text-slate-600 mt-2 font-medium text-lg leading-relaxed">Monitor your live token status, estimated wait times, and exact consultation time straight from your mobile phone from anywhere!</p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                   
-                  <div className="max-w-xl mx-auto">
+                  <div className="flex-1 w-full lg:max-w-xl bg-white p-8 rounded-[2rem] border border-slate-200 shadow-xl shadow-blue-900/5">
                     <div className="relative">
                       <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300" size={28} />
                       <input 
@@ -398,7 +420,7 @@ export default function SmartHospital() {
                         placeholder="E.G. CARD-1" 
                         value={searchToken}
                         onChange={(e) => setSearchToken(e.target.value.toUpperCase())}
-                        className="w-full text-2xl font-black text-slate-600 pl-16 pr-6 py-6 rounded-[2rem] border-2 border-blue-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100 transition placeholder:font-bold placeholder:text-slate-300"
+                        className="w-full text-2xl font-black text-slate-600 pl-16 pr-6 py-6 rounded-[2rem] border-2 border-blue-400 focus:outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100 transition placeholder:font-bold placeholder:text-slate-300 shadow-inner"
                       />
                     </div>
 
